@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.schemas import PredictRequest
-from app.model import predict_text
+from schemas import PredictRequest
+from final_model import predict_text
 
 app = FastAPI()
 
