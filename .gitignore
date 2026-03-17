@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.env
+venv/
+.env.local
+.DS_Store
+*.log
+node_modules/
+Fake.csv
+True.csv
+misinformation_model
+*.zip
+results/
