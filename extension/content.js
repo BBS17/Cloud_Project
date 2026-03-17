@@ -78,7 +78,7 @@ function showAnalyzeButton(selectedText, x, y) {
         const confidence = data.confidence ?? "N/A";
 
         showResultPopup(
-            `Label: ${label}\nConfidence: ${confidence}`,
+            `Label: ${label}\nConfidence: ${confidence}%`,
             clickX,
             clickY
         );
