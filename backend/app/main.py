@@ -1,7 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from schemas import PredictRequest
-from final_model import predict_text
+from app.schemas import PredictRequest
+from app.final_model import predict_text
+from app.db import log_inference, get_metrics_summary
+import time
+
 
 app = FastAPI()
 
@@ -27,6 +30,24 @@ async def health():
 
 #predictions/model endpoint
 @app.post("/predict")
-async def predict(request: PredictRequest):
+async def predict(request: PredictRequest, background_tasks: BackgroundTasks):
+    #start timer
+    start = time.perf_counter()
     #run prediction model here
-    return predict_text(request.text)
+    response = predict_text(request.text)
+    #end timer
+    end = time.perf_counter()
+    latency_ms = (end - start) * 1000
+
+    background_tasks.add_task(
+        log_inference,
+        request.text,
+        response,
+        latency_ms
+    )
+    return response
+
+# Get metrics summary
+@app.get("/metrics")
+async def metrics():
+    return get_metrics_summary()

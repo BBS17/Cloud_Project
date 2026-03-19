@@ -4,7 +4,7 @@ import torch
 #This file is in charge of passing the user text to the ml model
 
 # load saved model
-model_path = "./misinformation_model"
+model_path = "app/misinformation_model"
 
 tokenizer = DistilBertTokenizerFast.from_pretrained(model_path)
 model = DistilBertForSequenceClassification.from_pretrained(model_path)
