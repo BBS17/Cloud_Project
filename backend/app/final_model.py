@@ -1,53 +1,62 @@
-from transformers import DistilBertTokenizerFast, DistilBertForSequenceClassification
-import torch
+import logging
+import os
+from pathlib import Path
 
-#This file is in charge of passing the user text to the ml model
+from app.model_labels import display_label
 
-# load saved model
-model_path = "app/misinformation_model"
+logger = logging.getLogger(__name__)
 
-tokenizer = DistilBertTokenizerFast.from_pretrained(model_path)
-model = DistilBertForSequenceClassification.from_pretrained(model_path)
+MODEL_PATH = Path(os.getenv("MODEL_PATH", Path(__file__).parent / "misinformation_model"))
 
-model.eval()
+# Initialised to None; populated by load_model() at startup
+tokenizer = None
+model = None
 
-#parameters: user text
-#return: label, confidence score
-def predict_text(text):
+# The ISOT training scripts use 0 = fake and 1 = true.  Keep this fallback for
+# older checkpoints that were saved without id2label metadata.
+
+
+def is_model_loaded() -> bool:
+    return model is not None
+
+
+def load_model() -> None:
+    """Load the tokenizer and model into memory. Safe to call multiple times."""
+    global tokenizer, model
+    if model is not None:
+        return
+
+    from transformers import DistilBertForSequenceClassification, DistilBertTokenizerFast
+
+    try:
+        tokenizer = DistilBertTokenizerFast.from_pretrained(MODEL_PATH)
+        model = DistilBertForSequenceClassification.from_pretrained(MODEL_PATH)
+        model.eval()
+        logger.info("Model loaded from %s", MODEL_PATH)
+    except Exception as exc:
+        logger.critical("Failed to load model from %s: %s", MODEL_PATH, exc)
+        raise
+
+
+def predict_text(text: str) -> dict:
+    import torch
+
     inputs = tokenizer(
         text,
         return_tensors="pt",
         truncation=True,
         padding=True,
-        max_length=128
+        max_length=256,
     )
 
     with torch.no_grad():
         outputs = model(**inputs)
 
-    logits = outputs.logits
-    probabilities = torch.softmax(logits, dim=1)
-
+    probabilities = torch.softmax(outputs.logits, dim=1)
     predicted_class = torch.argmax(probabilities, dim=1).item()
-    confidence = probabilities[0][predicted_class].item()
-    #convert to percentage
-    confidence = round(confidence * 100, 2)
-
-    #change labels
-    label_map = {
-        0: "Truth",
-        1: "Misinformation"
-    }
+    confidence = round(probabilities[0][predicted_class].item() * 100, 2)
 
     return {
-        "label": label_map[predicted_class],
-        "confidence": confidence
+        "label": display_label(predicted_class, model.config),
+        "confidence": confidence,
     }
-
-#test
-'''
-if __name__ == "__main__":
-    sample_text = "The clavicle is superior to the rib cage."
-    result = predict_text(sample_text)
-    print(result)
-'''

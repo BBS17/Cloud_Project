@@ -1,6 +1,8 @@
-fastapi
-uvicorn
-pydantic
-transformers
-psycopg2-binary
-python-dotenv
+fastapi==0.115.6
+uvicorn==0.32.1
+pydantic==2.10.3
+transformers==4.47.1
+psycopg2-binary==2.9.10
+python-dotenv==1.0.1
+slowapi==0.1.9
+# torch is installed separately in Dockerfile to use the CPU-only build

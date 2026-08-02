@@ -1,0 +1,9 @@
+{
+  "accuracy": 0.9997,
+  "precision": 0.9994,
+  "recall": 1.0,
+  "f1": 0.9997,
+  "test_size": 6727,
+  "source": "train_model_v2.py held-out test evaluation",
+  "completed_at": "2026-08-02T09:49:27.113682"
+}
