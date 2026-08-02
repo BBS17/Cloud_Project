@@ -1,8 +1,14 @@
 # Purpose: create tables
 
-import psycopg2
+import logging
 import os
+
+import psycopg2
+from psycopg2 import sql
 from dotenv import load_dotenv
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -22,21 +28,22 @@ def create_database():
         conn.autocommit = True  # REQUIRED for CREATE DATABASE
         cursor = conn.cursor()
 
-        # create database if it doesn't exist
-        cursor.execute(f"SELECT 1 FROM pg_database WHERE datname = '{DB_NAME}'")
+        # Use a parameterized query to safely check existence
+        cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (DB_NAME,))
         exists = cursor.fetchone()
 
         if not exists:
-            cursor.execute(f"CREATE DATABASE {DB_NAME}")
-            print(f"Database '{DB_NAME}' created")
+            # Use sql.Identifier to safely quote the database name
+            cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(DB_NAME)))
+            logger.info("Database '%s' created", DB_NAME)
         else:
-            print(f"Database '{DB_NAME}' already exists")
+            logger.info("Database '%s' already exists", DB_NAME)
 
         cursor.close()
         conn.close()
 
     except Exception as e:
-        print("Error creating database:", e)
+        logger.error("Error creating database: %s", e)
 
 
 def create_table():
@@ -66,10 +73,10 @@ def create_table():
         cursor.close()
         conn.close()
 
-        print("Table created successfully")
+        logger.info("Table created successfully")
 
     except Exception as e:
-        print("Error creating table:", e)
+        logger.error("Error creating table: %s", e)
 
 
 if __name__ == "__main__":

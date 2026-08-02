@@ -1,9 +1,93 @@
-//This file controls the front end extension of the application
-//TODO: add features to prevent phrases less than 3 words, or set max words
+// API endpoint lives in background.js — update it there when deploying
 
-//store references to dynamic elements
+const MIN_WORD_COUNT = 3;
+const MAX_CHAR_COUNT = 5000;
+
 let analyzeButton = null;
 let resultPopup = null;
+
+// Inject styles once so the button and popup can use CSS classes
+function injectStyles() {
+    if (document.getElementById("fact-checker-styles")) return;
+    const style = document.createElement("style");
+    style.id = "fact-checker-styles";
+    style.textContent = `
+        .fc-btn {
+            position: absolute;
+            z-index: 2147483647;
+            padding: 5px 13px;
+            border: none;
+            border-radius: 20px;
+            background: #1a1a1a;
+            color: #fff;
+            cursor: pointer;
+            font-size: 12px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+            user-select: none;
+        }
+        .fc-btn:hover {
+            background: #333;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+        }
+        .fc-btn:active { transform: translateY(0); }
+
+        .fc-popup {
+            position: absolute;
+            z-index: 2147483647;
+            min-width: 210px;
+            max-width: 280px;
+            padding: 14px 16px 12px;
+            border-radius: 12px;
+            background: #fff;
+            box-shadow: 0 8px 28px rgba(0,0,0,0.14), 0 1px 4px rgba(0,0,0,0.07);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-size: 13px;
+            line-height: 1.5;
+            border: 1px solid rgba(0,0,0,0.06);
+        }
+        .fc-close {
+            position: absolute;
+            top: 9px;
+            right: 11px;
+            cursor: pointer;
+            color: #bbb;
+            font-size: 17px;
+            line-height: 1;
+            transition: color 0.1s;
+        }
+        .fc-close:hover { color: #444; }
+
+        .fc-header { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+        .fc-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+        .fc-dot--truth   { background: #16a34a; }
+        .fc-dot--misinfo { background: #dc2626; }
+        .fc-label { font-weight: 700; font-size: 14px; }
+        .fc-label--truth   { color: #16a34a; }
+        .fc-label--misinfo { color: #dc2626; }
+
+        .fc-confidence { color: #666; font-size: 12px; margin: 0; }
+
+        .fc-bar-track {
+            height: 4px;
+            background: #e5e7eb;
+            border-radius: 2px;
+            margin-top: 9px;
+            overflow: hidden;
+        }
+        .fc-bar-fill { height: 100%; border-radius: 2px; }
+        .fc-bar-fill--truth   { background: #16a34a; }
+        .fc-bar-fill--misinfo { background: #dc2626; }
+
+        .fc-status { color: #999; font-size: 12px; font-style: italic; margin: 0; }
+        .fc-error  { color: #dc2626; font-size: 12px; margin: 0; }
+    `;
+    document.head.appendChild(style);
+}
 
 // Remove existing analyze button
 function removeAnalyzeButton() {
@@ -21,112 +105,108 @@ function removeResultPopup() {
     }
 }
 
-// Create the floating Analyze button, TODO: work on styling, current styling is generic
+// Create the floating Analyze button
 function showAnalyzeButton(selectedText, x, y) {
     removeAnalyzeButton();
 
     analyzeButton = document.createElement("button");
+    analyzeButton.className = "fc-btn";
     analyzeButton.textContent = "Analyze";
-
-    //generic styling
-    analyzeButton.style.position = "absolute";
     analyzeButton.style.left = `${x}px`;
-    analyzeButton.style.top = `${y}px`;
-    analyzeButton.style.zIndex = "999999";
-    analyzeButton.style.padding = "6px 10px";
-    analyzeButton.style.border = "none";
-    analyzeButton.style.borderRadius = "6px";
-    analyzeButton.style.background = "#111";
-    analyzeButton.style.color = "white";
-    analyzeButton.style.cursor = "pointer";
-    analyzeButton.style.fontSize = "13px";
-    analyzeButton.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
+    analyzeButton.style.top  = `${y}px`;
 
-    analyzeButton.addEventListener("click", async (event) => {
-    event.stopPropagation();
+    analyzeButton.addEventListener("click", (event) => {
+        event.stopPropagation();
 
-    const clickX = event.pageX;
-    const clickY = event.pageY;
+        const clickX = event.pageX;
+        const clickY = event.pageY;
 
-    removeAnalyzeButton();
-    showResultPopup("Analyzing...", clickX, clickY);
+        removeAnalyzeButton();
+        showResultPopup({ type: "loading" }, clickX, clickY);
 
-    try {
-        const response = await fetch("http://localhost:8080/predict", {
-            method: "POST",
-            headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            text: selectedText
-        })
+        // Background script makes the fetch (bypasses mixed-content restriction)
+        chrome.runtime.sendMessage({ action: "predict", text: selectedText }, (response) => {
+            if (chrome.runtime.lastError) {
+                showResultPopup({ type: "error", message: chrome.runtime.lastError.message }, clickX, clickY);
+                return;
+            }
+            if (response.error) {
+                showResultPopup({ type: "error", message: response.error }, clickX, clickY);
+                return;
+            }
+            const { label, confidence } = response.result;
+            showResultPopup(
+                { type: "result", label: label ?? "Unknown", confidence: confidence ?? 0 },
+                clickX,
+                clickY
+            );
         });
+    });
 
-        const data = await response.json();
-
-        if (!response.ok) {
-        showResultPopup(
-            `Error: ${JSON.stringify(data, null, 2)}`,
-            clickX,
-            clickY
-        );
-        return;
-        }
-
-      // Change this formatting to match backend response shape
-        const label = data.label ?? "Unknown";
-        const confidence = data.confidence ?? "N/A";
-
-        showResultPopup(
-            `Label: ${label}\nConfidence: ${confidence}%`,
-            clickX,
-            clickY
-        );
-    } catch (error) {
-        showResultPopup(`Connection failed: ${error.message}`, clickX, clickY);
-    }
-  });
-
-  document.body.appendChild(analyzeButton);
+    document.body.appendChild(analyzeButton);
 }
 
 // Create the floating result popup
-function showResultPopup(message, x, y) {
+// payload: { type: "loading" } | { type: "result", label, confidence } | { type: "error", message }
+function showResultPopup(payload, x, y) {
     removeResultPopup();
 
     resultPopup = document.createElement("div");
-    resultPopup.textContent = message;
-
-    resultPopup.style.position = "absolute";
+    resultPopup.className = "fc-popup";
     resultPopup.style.left = `${x}px`;
-    resultPopup.style.top = `${y + 35}px`;
-    resultPopup.style.zIndex = "999999";
-    resultPopup.style.maxWidth = "260px";
-    resultPopup.style.padding = "10px 12px";
-    resultPopup.style.borderRadius = "8px";
-    resultPopup.style.background = "white";
-    resultPopup.style.color = "#111";
-    resultPopup.style.border = "1px solid #ccc";
-    resultPopup.style.boxShadow = "0 4px 12px rgba(0,0,0,0.2)";
-    resultPopup.style.fontSize = "13px";
-    resultPopup.style.whiteSpace = "pre-wrap";
-    resultPopup.style.lineHeight = "1.4";
+    resultPopup.style.top  = `${y + 35}px`;
 
-    // close button
-    const closeBtn = document.createElement("div");
+    const closeBtn = document.createElement("span");
+    closeBtn.className = "fc-close";
     closeBtn.textContent = "×";
-    closeBtn.style.position = "absolute";
-    closeBtn.style.top = "4px";
-    closeBtn.style.right = "8px";
-    closeBtn.style.cursor = "pointer";
-    closeBtn.style.fontWeight = "bold";
-    closeBtn.style.fontSize = "14px";
-
-    closeBtn.addEventListener("click", () => {
-        removeResultPopup();
-    });
-
+    closeBtn.addEventListener("click", removeResultPopup);
     resultPopup.appendChild(closeBtn);
+
+    if (payload.type === "loading") {
+        const status = document.createElement("p");
+        status.className = "fc-status";
+        status.textContent = "Analyzing…";
+        resultPopup.appendChild(status);
+
+    } else if (payload.type === "result") {
+        const isMisinfo = payload.label === "Misinformation";
+        const mod = isMisinfo ? "misinfo" : "truth";
+
+        const header = document.createElement("div");
+        header.className = "fc-header";
+
+        const dot = document.createElement("span");
+        dot.className = `fc-dot fc-dot--${mod}`;
+
+        // textContent used for all API values — no innerHTML risk
+        const labelEl = document.createElement("span");
+        labelEl.className = `fc-label fc-label--${mod}`;
+        labelEl.textContent = payload.label;
+
+        header.appendChild(dot);
+        header.appendChild(labelEl);
+        resultPopup.appendChild(header);
+
+        const confEl = document.createElement("p");
+        confEl.className = "fc-confidence";
+        confEl.textContent = `Confidence: ${payload.confidence}%`;
+        resultPopup.appendChild(confEl);
+
+        const track = document.createElement("div");
+        track.className = "fc-bar-track";
+        const fill = document.createElement("div");
+        fill.className = `fc-bar-fill fc-bar-fill--${mod}`;
+        fill.style.width = `${payload.confidence}%`;
+        track.appendChild(fill);
+        resultPopup.appendChild(track);
+
+    } else if (payload.type === "error") {
+        const errEl = document.createElement("p");
+        errEl.className = "fc-error";
+        errEl.textContent = payload.message;
+        resultPopup.appendChild(errEl);
+    }
+
     document.body.appendChild(resultPopup);
 }
 
@@ -134,8 +214,13 @@ function showResultPopup(message, x, y) {
 document.addEventListener("mouseup", (event) => {
     setTimeout(() => {
         const selectedText = window.getSelection().toString().trim();
+        const wordCount = selectedText.split(/\s+/).filter(Boolean).length;
 
-        if (selectedText.length > 0) {
+        if (selectedText.length > MAX_CHAR_COUNT) {
+            // silently ignore — too large to analyse
+            removeAnalyzeButton();
+        } else if (wordCount >= MIN_WORD_COUNT) {
+            injectStyles();
             showAnalyzeButton(selectedText, event.pageX + 10, event.pageY + 10);
         } else {
             removeAnalyzeButton();

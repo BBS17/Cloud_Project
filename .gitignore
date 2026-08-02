@@ -9,5 +9,8 @@ node_modules/
 Fake.csv
 True.csv
 misinformation_model
+misinformation_model_v2/
+.training_tmp/
+training_log.txt
 *.zip
 results/
